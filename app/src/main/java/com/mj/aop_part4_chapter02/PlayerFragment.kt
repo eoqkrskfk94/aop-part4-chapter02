@@ -3,9 +3,13 @@ package com.mj.aop_part4_chapter02
 import android.os.Bundle
 import android.util.Log
 import androidx.fragment.app.Fragment
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
+import androidx.core.view.isVisible
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.SimpleExoPlayer
+import com.mj.aop_part4_chapter02.databinding.FragmentPlayerBinding
 import com.mj.aop_part4_chapter02.service.MusicDto
 import com.mj.aop_part4_chapter02.service.MusicService
 import retrofit2.Call
@@ -17,12 +21,86 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class PlayerFragment : Fragment(R.layout.fragment_player) {
 
+    private var binding: FragmentPlayerBinding? = null
+    private var isWatchingPlayListView = true
+    private var player: SimpleExoPlayer? = null
+    private lateinit var playListAdapter: PlayListAdapter
+
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val fragmentPlayerBinding = FragmentPlayerBinding.bind(view)
+        binding = fragmentPlayerBinding
 
+        initPlayView(fragmentPlayerBinding)
+        initPlayListButton(fragmentPlayerBinding)
+        initPlayControlButtons(fragmentPlayerBinding)
         getMusicListFromServer()
+        initRecyclerView(fragmentPlayerBinding)
+    }
+
+    private fun initPlayControlButtons(fragmentPlayerBinding: FragmentPlayerBinding) {
+        fragmentPlayerBinding.playControlImageView.setOnClickListener {
+            val player = this.player ?: return@setOnClickListener
+
+            if(player.isPlaying) {
+                player.pause()
+            } else{
+                player.play()
+            }
+        }
+
+        fragmentPlayerBinding.skipNextImageView.setOnClickListener {
+
+        }
+
+        fragmentPlayerBinding.skipPrevImageView.setOnClickListener {
+
+        }
+    }
+
+    private fun initPlayView(fragmentPlayerBinding: FragmentPlayerBinding) {
+        context?.let {
+            player = SimpleExoPlayer.Builder(it).build()
+        }
+
+        fragmentPlayerBinding.playerView.player = player
+
+        binding?.let { binding ->
+            player?.addListener(object : Player.EventListener {
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    super.onIsPlayingChanged(isPlaying)
+                    if(isPlaying) {
+                        binding.playControlImageView.setImageResource(R.drawable.ic_baseline_pause_48)
+                    } else {
+                        binding.playControlImageView.setImageResource(R.drawable.ic_baseline_play_arrow_48)
+                    }
+                }
+            })
+
+        }
+    }
+
+    private fun initRecyclerView(fragmentPlayerFragment: FragmentPlayerBinding){
+        playListAdapter = PlayListAdapter {
+
+        }
+
+        fragmentPlayerFragment.playListRecyclerView.apply {
+            adapter = playListAdapter
+            layoutManager = LinearLayoutManager(context)
+        }
+    }
+
+    private fun initPlayListButton(fragmentPlayerFragment: FragmentPlayerBinding) {
+         fragmentPlayerFragment.playlistImageView.setOnClickListener {
+             fragmentPlayerFragment.playerViewGroup.isVisible = isWatchingPlayListView
+             fragmentPlayerFragment.playerListViewGroup.isVisible = isWatchingPlayListView.not()
+
+             isWatchingPlayListView = !isWatchingPlayListView
+         }
     }
 
     private fun getMusicListFromServer() {
@@ -37,6 +115,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                             .enqueue(object : Callback<MusicDto> {
                                 override fun onResponse(call: Call<MusicDto>, response: Response<MusicDto>) {
                                     Log.d("PlayerFragment", "${response.body()}")
+
+                                    response.body()?.let {
+                                        val modelList = it.musics.mapIndexed { index, musicEntity ->
+                                            musicEntity.mapper(index.toLong())
+                                        }
+
+                                        setMusicList(modelList)
+                                        playListAdapter.submitList(modelList)
+                                    }
                                 }
 
                                 override fun onFailure(call: Call<MusicDto>, t: Throwable) {
@@ -45,6 +132,21 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
                             })
                 }
+    }
+
+    private fun setMusicList(modelList: List<MusicModel>) {
+        context?.let {
+            player?.addMediaItems(modelList.map { musicModel ->
+                MediaItem.Builder()
+                        .setMediaId(musicModel.id.toString())
+                        .setUri(musicModel.streamUrl)
+                        .build()
+            })
+
+            player?.prepare()
+            player?.play()
+        }
+
     }
 
     companion object {
